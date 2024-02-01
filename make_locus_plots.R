@@ -12,7 +12,7 @@ susiex_loci = read_table(
   paste0(
     "/data/scratch/hmy117/gwas_raw_results/susiex_inputs/susiex_loci_",
     trait
-    )
+    ), col_types = "cddddc"
   )
 
 # define locus

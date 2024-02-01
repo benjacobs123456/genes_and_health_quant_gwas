@@ -49,7 +49,7 @@ ukb_sas = read_tsv(paste0(
 # read in GH SAS
 gh_sas = read_tsv(paste0(
   "/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/",trait,".tsv"
-), col_types = "ddcccdddddc")
+), col_types = "ddccdddddccc")
 
 # read in GH clump res
 sig_snps_gh = read_tsv(paste0("/data/scratch/hmy117/gwas_raw_results/gh_sas_sig_lead_snps_",trait),col_types = "c")
@@ -82,12 +82,13 @@ filter(MarkerName %in% sig_snps$SNP)
 
 
 # loop through each GH hit and see if there are known hits nearby
-sig_hits_gh = gh_sas %>% filter(P<5e-8)
+p_study_sig = 5e-8 / 29
+sig_hits_gh = gh_sas %>% filter(P<p_study_sig)
 specific_snps = data.frame()
 
 # combine UKB GWAS
 ukb_combined = bind_rows(ukb_eur,ukb_eas,ukb_sas,ukb_afr) %>%
-filter(P < 5e-8) %>%
+filter(P < 1e-5) %>%
 dplyr::select(CHROMOSOME,POSITION)
 
 for(i in c(1:nrow(sig_hits_gh))){
@@ -96,8 +97,8 @@ this_snp = sig_hits_gh[i,]
 
   matches = ukb_combined %>%
     filter(CHROMOSOME == this_snp$CHROMOSOME &
-             POSITION > this_snp$POSITION - 5e5 &
-             POSITION < this_snp$POSITION + 5e5)
+             POSITION > this_snp$POSITION - 1e6 &
+             POSITION < this_snp$POSITION + 1e6)
 
   if(nrow(matches)==0){
     specific_snps <<- bind_rows(specific_snps,this_snp)
@@ -115,8 +116,8 @@ for(i in c(1:nrow(specific_snps))){
   this_snp = specific_snps[i,]
   more_sig_snps = specific_snps %>%
     filter(CHROMOSOME == this_snp$CHROMOSOME &
-             POSITION > this_snp$POSITION - 5e5 &
-             POSITION < this_snp$POSITION + 5e5 &
+             POSITION > this_snp$POSITION - 1e6 &
+             POSITION < this_snp$POSITION + 1e6 &
              P < this_snp$P)
   if(nrow(more_sig_snps)==0){
     specific_loci <<- specific_loci %>%
@@ -135,9 +136,9 @@ combined_gwas = bind_rows(
   ukb_eas %>% mutate(ancestry = "EAS"),
   ukb_afr %>% mutate(ancestry = "AFR"))
 
-if(nrow(specific_loci)!=0){
-  for(i in c(1:nrow(specific_loci))){
-  this_snp = specific_loci[i,]
+if(nrow(specific_snps)!=0){
+  for(i in c(1:nrow(specific_snps))){
+  this_snp = specific_snps[i,]
 
   # variant
   # forest plot
@@ -176,8 +177,8 @@ if(nrow(specific_loci)!=0){
 # make plots
 res = res %>%
 mutate(color = case_when(
-  `P.value_association` < 5e-8 & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
-  `P.value_association` < 5e-8 ~ "gwas_sig",
+  `P.value_association` < p_study_sig & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
+  `P.value_association` < p_study_sig ~ "gwas_sig",
   Chromosome %% 2 == 0 ~ "even",
   Chromosome %% 2 != 0 ~ "odd",
 ))
@@ -208,7 +209,7 @@ ggtitle(paste0("GWAS Meta-analysis of ",trait,"\nN loci: ",n_loci,"\nN specific 
 
 # het manhattan
 sig_het_hits = res %>%
-filter(`P.value_ancestry_het`< 5e-8) %>%
+filter(`P.value_ancestry_het`< p_study_sig) %>%
 mutate(rounded_cumpos = round(cum_pos/1e6,0)) %>%
 group_by(rounded_cumpos) %>%
 slice_min(`P.value_ancestry_het`) %>%
@@ -219,7 +220,7 @@ dplyr::select(-rounded_cumpos)
 # recolour
 res = res %>%
 mutate(color = case_when(
-  `P.value_ancestry_het` < 5e-8 & `P.value_association`< 5e-8  ~ "gwas_sig_het",
+  `P.value_ancestry_het` < p_study_sig & `P.value_association`< p_study_sig  ~ "gwas_sig_het",
   Chromosome %% 2 == 0 ~ "even",
   Chromosome %% 2 != 0 ~ "odd",
 ))
@@ -245,7 +246,7 @@ ggtitle("Ancestral heterogeneity")
 results_for_file = res %>%
   mutate(sig_snp = ifelse(MarkerName %in% sig_snps$SNP,"lead_sig_snp"," ")) %>%
   mutate(gh_specific_locus = ifelse(MarkerName %in% specific_snps$MARKERNAME,"specific_locus"," ")) %>%
-  filter(  `P.value_association` < 5e-8 ) %>%
+  filter(  `P.value_association` < p_study_sig ) %>%
   dplyr::select(-min_bp,-max_bp,-midpoint,-cum_pos,-cumbp) %>%
   mutate(trait = trait)
 outfile = paste0("/data/home/hmy117/gh_quant_traits/outputs/sig_hits_",trait,".csv")
@@ -256,7 +257,7 @@ write_csv(results_for_file,outfile)
 results_for_file_gh = gh_sas %>%
   mutate(sig_snp = ifelse(MARKERNAME %in% sig_snps_gh$SNP,"lead_sig_snp"," ")) %>%
   mutate(gh_specific_locus = ifelse(MARKERNAME %in% specific_snps$MARKERNAME,"specific_locus"," ")) %>%
-  filter( P < 5e-8 )
+  filter( P < p_study_sig )
 outfile = paste0("/data/home/hmy117/gh_quant_traits/outputs/gh_sig_hits_",trait,".csv")
 write_csv(results_for_file_gh,outfile)
 
@@ -277,8 +278,8 @@ res = res %>%
 # make plots
 res = res %>%
 mutate(color = case_when(
-  GH_P < 5e-8 & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
-  GH_P < 5e-8 ~ "gwas_sig",
+  GH_P < p_study_sig & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
+  GH_P < p_study_sig ~ "gwas_sig",
   Chromosome %% 2 == 0 ~ "even",
   Chromosome %% 2 != 0 ~ "odd",
 ))
@@ -309,8 +310,8 @@ ggtitle("Genes & Health SAS GWAS")
 # make plots
 res = res %>%
 mutate(color = case_when(
-UKB_P < 5e-8 & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
-UKB_P < 5e-8 ~ "gwas_sig",
+UKB_P < p_study_sig & MarkerName %in% specific_snps$MARKERNAME ~ "gwas_sig_specific",
+UKB_P < p_study_sig ~ "gwas_sig",
 Chromosome %% 2 == 0 ~ "even",
 Chromosome %% 2 != 0 ~ "odd",
 ))

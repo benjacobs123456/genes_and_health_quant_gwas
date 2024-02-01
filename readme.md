@@ -2,21 +2,17 @@
 This repo contains code used to produce the results of "Genetic architecture of routinely acquired blood tests in a UK cohort of South Asian ancestry reveals ancestry-specific causal variants"
 
 Contact: b.jacobs@qmul.ac.uk
-18-10-23
+20-12-23
 
 # Code
 
 ## Download GH GWAS data
 ```unix
 cd /data/scratch/hmy117/gwas_raw_results/raw/
-~/google-cloud-sdk/bin/gsutil cp gs://genesandhealth_publicdatasets/results_GWAS_public/2023_07_version007phenotypes/2023_09_quant_trait_gwas_paper/* ./
+~/google-cloud-sdk/bin/gsutil cp gs://fg-qmul-production-sandbox-2_green/forBen-2023-12-20/* ./
 
 # unzip
-wait
-for file in *.gz;
-  do
-    gunzip $file &
-  done
+tar -xvf /data/scratch/hmy117/gwas_raw_results/raw/exports_20_12_23.tar.gz
 ```
 
 ## Download pan-UKB GWAS
@@ -56,82 +52,31 @@ wget https://pan-ukb-us-east-1.s3.amazonaws.com/sumstats_flat_files/continuous-3
 wget https://pan-ukb-us-east-1.s3.amazonaws.com/sumstats_flat_files/continuous-30000-both_sexes-irnt.tsv.bgz &
 
 wait
+module load samtools
 for file in *.bgz;
   do
     bgzip -d $file &
   done
 ```
 
-## Process GH GWAS sum stats
-```r
-library(tidyverse)
-setwd("/data/scratch/hmy117/gwas_raw_results/raw")
-
-# read in codex
-filelist = read_csv("~/gh_quant_traits/inputs/gh_ukb_gwas_paths.csv") %>%
-  dplyr::select(1:4) %>%
-  na.omit()
-
-# loop through each file and process for MR-MEGA
-for(i in c(1:nrow(filelist))){
-
-  # get path
-  this_file = filelist[i,]
-  message("Doing trait ",this_file$ukb_phenotype)
-  # get path
-  path_to_gwas = paste0("/data/scratch/hmy117/gwas_raw_results/raw/",this_file$gh_path)
-  message("Doing trait: ",this_file$gh_phenotype)
-  # read in
-  dat = read_table(path_to_gwas,
-                 col_types = cols_only(
-    CHROM = col_double(),
-    GENPOS = col_double(),
-    ID = col_character(),
-    ALLELE0 = col_character(),
-    ALLELE1 = col_character(),
-    A1FREQ = col_double(),
-    INFO = col_double(),
-    N = col_double(),
-    BETA = col_double(),
-    SE = col_double(),
-    LOG10P = col_double(),
-  )) %>%
-    mutate(P = 10^-LOG10P,
-           trait = this_file$gh_phenotype) %>%
-    filter(A1FREQ >= 0.01 & A1FREQ <= 0.99 & INFO > 0.7) %>%
-    dplyr::select(-INFO,-LOG10P) %>%
-    mutate(cohort = "GH") %>%
-    dplyr::rename(
-      "MARKERNAME" = ID,
-      "POSITION" = GENPOS,
-      "EA" = ALLELE1,
-      "EAF" = A1FREQ,
-      "NEA" = ALLELE0,
-      "CHROMOSOME" = CHROM
-      )
-
-  path_out = paste0("/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/",this_file$gh_phenotype,".tsv")
-  write_tsv(dat,path_out)
-}
-
-```
-
 ## Liftover UKB GWAS
 ```unix
 
 # liftover ukb gwas
-awk 'NR>1{print $1,$2-1,$2,$1":"$2}' /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/biomarkers-30600-both_sexes-irnt.tsv > /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/ukb_gwas_hg19
+awk 'NR>1{print "chr"$1,$2-1,$2,$1":"$2}' /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/biomarkers-30600-both_sexes-irnt.tsv > /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/ukb_gwas_hg19
 
 # run liftover
 /data/Wolfson-UKBB-Dobson/liftover/liftOver /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/ukb_gwas_hg19 \
 /data/Wolfson-UKBB-Dobson/liftover/hg19ToHg38.over.chain.gz \
-ukb_gwas_hg38.bed unlifted.bed
+/data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/ukb_gwas_hg38.bed /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/unlifted.bed
 
 ```
 
 
-## Format UKB files
+## Format UKB & GH files
 ```unix
+qsub ~/gh_quant_traits/scripts/prepare_gh_files.sh
+
 qsub ~/gh_quant_traits/scripts/prepare_ukb_files.sh
 ```
 
@@ -140,14 +85,13 @@ qsub ~/gh_quant_traits/scripts/prepare_ukb_files.sh
 qsub ~/gh_quant_traits/scripts/mr_mega.sh
 ```
 
-
 ## Plot ancestral PCs
-```r
+```R
 library(tidyverse)
 setwd("/data/scratch/hmy117/gwas_raw_results/")
 
 # read in log to check PCs
-mr_mega_log = read_table("./mr_mega/Albumin_mr_mega_res.log",skip=50,n_max = 7)
+mr_mega_log = read_table("./mr_mega/Albumin_mr_mega_res.log",skip=47,n_max = 7)
 mr_mega_log$PCs = str_remove_all(mr_mega_log$PCs,"../mr_mega_inputs/")
 mr_mega_log$PCs = str_remove_all(mr_mega_log$PCs,".tsv")
 
@@ -157,7 +101,7 @@ a = ggplot(mr_mega_log,aes(PC0,PC1,label=PCs))+geom_point()+ggrepel::geom_text_r
 b = ggplot(mr_mega_log,aes(PC1,PC2,label=PCs))+geom_point()+ggrepel::geom_text_repel(show.legend = F)+
   theme_minimal()+
   scale_color_brewer(palette="Paired")
-png("pc_plots.png",res=900,units="in",width=8,height=4)
+png("/data/home/hmy117/gh_quant_traits/outputs/pc_plots.png",res=900,units="in",width=8,height=4)
 gridExtra::grid.arrange(a,b,ncol=2)
 dev.off()
 ```
@@ -182,11 +126,11 @@ unzip  -o g1000_eas.zip &
 unzip  -o g1000_afr.zip &
 
 # liftover
-awk '{print "chr"$1,$4-1,$4,$2}' g1000_eur.bim > g1000_eur_hg19_bed
-awk '{print "chr"$1,$4-1,$4,$2}' g1000_sas.bim > g1000_sas_hg19_bed
-awk '{print "chr"$1,$4-1,$4,$2}' g1000_afr.bim > g1000_afr_hg19_bed
-awk '{print "chr"$1,$4-1,$4,$2}' g1000_eas.bim > g1000_eas_hg19_bed
-awk '{print "chr"$1,$4-1,$4,$2}' g1000_amr.bim > g1000_amr_hg19_bed
+awk '{print "chr"$1,$4-1,$4,$2}' g1000_eur.bim > g1000_eur_hg19_bed &
+awk '{print "chr"$1,$4-1,$4,$2}' g1000_sas.bim > g1000_sas_hg19_bed &
+awk '{print "chr"$1,$4-1,$4,$2}' g1000_afr.bim > g1000_afr_hg19_bed &
+awk '{print "chr"$1,$4-1,$4,$2}' g1000_eas.bim > g1000_eas_hg19_bed &
+awk '{print "chr"$1,$4-1,$4,$2}' g1000_amr.bim > g1000_amr_hg19_bed &
 
 # liftOver
 /data/Wolfson-UKBB-Dobson/liftover/liftOver g1000_eur_hg19_bed /data/Wolfson-UKBB-Dobson/liftover/hg19ToHg38.over.chain.gz g1000_eur_hg38_bed unlifted.bed &
@@ -196,11 +140,11 @@ awk '{print "chr"$1,$4-1,$4,$2}' g1000_amr.bim > g1000_amr_hg19_bed
 /data/Wolfson-UKBB-Dobson/liftover/liftOver g1000_amr_hg19_bed /data/Wolfson-UKBB-Dobson/liftover/hg19ToHg38.over.chain.gz g1000_amr_hg38_bed unlifted5.bed &
 
 # update SNP IDs
-awk '{print $4,$3}' g1000_eur_hg38_bed > eur_vars
-awk '{print $4,$3}' g1000_sas_hg38_bed > sas_vars
-awk '{print $4,$3}' g1000_eas_hg38_bed > eas_vars
-awk '{print $4,$3}' g1000_afr_hg38_bed > afr_vars
-awk '{print $4,$3}' g1000_amr_hg38_bed > amr_vars
+awk '{print $4,$3}' g1000_eur_hg38_bed > eur_vars &
+awk '{print $4,$3}' g1000_sas_hg38_bed > sas_vars &
+awk '{print $4,$3}' g1000_eas_hg38_bed > eas_vars &
+awk '{print $4,$3}' g1000_afr_hg38_bed > afr_vars &
+awk '{print $4,$3}' g1000_amr_hg38_bed > amr_vars &
 
 # update files to hg38
 for ancestry in eur sas eas amr afr;
@@ -218,9 +162,8 @@ for ancestry in eur sas eas amr afr;
     --set-all-var-ids @:# \
     --rm-dup exclude-all \
     --out g1000_$ancestry\_hg38_chrpos \
-    --make-bed
+    --make-bed &
   done
-
 
 # light QC
 for ancestry in eur sas eas amr afr;
@@ -240,7 +183,7 @@ for ancestry in eur sas eas amr afr;
 qsub ~/gh_quant_traits/scripts/process_mr_mega_res.sh
 ```
 
-## Clump results
+## Clump results - return
 ```unix
 qsub ~/gh_quant_traits/scripts/clump_results.sh
 qsub ~/gh_quant_traits/scripts/clump_gh_results.sh
@@ -251,12 +194,33 @@ qsub ~/gh_quant_traits/scripts/clump_gh_results.sh
 qsub ~/gh_quant_traits/scripts/make_manhattans.sh
 ```
 
+## PICK UP HERE
 ## Combine results for summary tables
 ```unix
 library(tidyverse)
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^gh_sig_hits",full.names=T)
 files = files[!grepl("annotations",files)]
-dat = read_csv(files,col_types = "ddcccdddddcccc")
+
+dat = purrr::map(files,function(x){
+  read_csv(x,col_types = cols_only(
+  CHROMOSOME = col_double(),
+  POSITION = col_double(),
+  NEA = col_character(),
+  EA = col_character(),
+  EAF = col_character(),
+  N = col_double(),
+  BETA = col_double(),
+  SE = col_double(),
+  P = col_double(),
+  trait = col_character(),
+  cohort = col_character(),
+  MARKERNAME = col_character(),
+  sig_snp = col_character(),
+  gh_specific_locus = col_character()
+)
+)
+})
+dat = do.call("bind_rows",dat)
 
 vep_input = dat %>%
 mutate(start = POSITION,end = POSITION,alleles = paste0(EA,"/",NEA),strand="+") %>%
@@ -266,34 +230,38 @@ write_tsv(vep_input,"/data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_f
 # repeat for meta
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^sig_hits",full.names=T)
 files = files[!grepl("annotations",files)]
-dat = read_csv(files,col_types = "ddcccdddddcccc")
+dat = purrr::map(files,function(x){
+  read_csv(x,col_types = cols_only(
+  MarkerName = col_character(),
+  Chromosome = col_double(),
+  Position = col_double(),
+  EA = col_character(),
+  NEA = col_character(),
+  EAF = col_double(),
+  Nsample = col_double(),
+  Ncohort = col_double(),
+  P.value_association = col_double(),
+  P.value_ancestry_het = col_double(),
+  P.value_residual_het = col_double()
+  )
+
+)
+})
+dat = do.call("bind_rows",dat)
+
 
 vep_input = dat %>%
 mutate(start = Position,end = Position,alleles = paste0(EA,"/",NEA),strand="+") %>%
-dplyr::select(1,start,end,alleles,strand)
+dplyr::select(Chromosome,start,end,alleles,strand)
 write_tsv(vep_input,"/data/home/hmy117/gh_quant_traits/outputs/all_meta_sig_hits_for_vep.tsv",col_names=F)
 
 ```
 
 ## VEP
 ```unix
-module load perl
-module load perl5lib
+module load ensembl-vep
 cd /data/home/hmy117/gh_quant_traits/outputs/
-~/ensembl-vep/vep -i /data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_for_vep.tsv \
---cache /data/scratch/hmy117/.vep \
---force_overwrite \
---most_severe \
---tab --fields "Uploaded_variation,Consequence"
 
-cd /data/home/hmy117/gh_quant_traits/outputs/
-~/ensembl-vep/vep -i /data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_for_vep.tsv \
---cache /data/scratch/hmy117/.vep \
---force_overwrite \
---everything \
--o gh_sig_hits_all_annotations.tsv
-
-cd /data/home/hmy117/gh_quant_traits/outputs/
 ~/ensembl-vep/vep -i /data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_for_vep.tsv \
 --cache \
 --dir_cache /data/scratch/hmy117/.vep \
@@ -302,9 +270,14 @@ cd /data/home/hmy117/gh_quant_traits/outputs/
 -o nearest_gene.tsv \
 --tab --fields "Uploaded_variation,Location,Allele,Gene,NEAREST,Feature,Feature_type,Consequence"
 
- ~/ensembl-vep/vep -i /data/home/hmy117/gh_quant_traits/outputs/all_meta_sig_hits_for_vep.tsv --cache --dir_cache /data/scratch/hmy117/.vep --force_overwrite --nearest symbol -o meta_nearest_gene.tsv --tab --fields "Uploaded_variation,Location,Allele,Gene,NEAREST,Feature,Feature_type,Consequence"
+ ~/ensembl-vep/vep -i /data/home/hmy117/gh_quant_traits/outputs/all_meta_sig_hits_for_vep.tsv \
+ --cache \
+ --dir_cache /data/scratch/hmy117/.vep \
+ --force_overwrite \
+ --nearest symbol \
+ -o meta_nearest_gene.tsv \
+ --tab --fields "Uploaded_variation,Location,Allele,Gene,NEAREST,Feature,Feature_type,Consequence"
 ```
-
 
 ## Combine results for summary tables (with VEP results)
 ```r
@@ -314,35 +287,20 @@ files = files[!grepl("annot",files)]
 
 # read VEP results
 vep_res = read_table("/data/home/hmy117/gh_quant_traits/outputs/nearest_gene.tsv",skip=32,col_types = cols(.default="c"))
-vep_res2 = read_table("/data/home/hmy117/gh_quant_traits/outputs/variant_effect_output.txt",skip=26,col_types = cols(.default="c"))
-vep_res3 = read_table("/data/home/hmy117/gh_quant_traits/outputs/gh_sig_hits_all_annotations.tsv",skip=105,col_types = cols(.default="c"))
-
-# take one gene per SNP
-vep_res = vep_res %>% distinct(`#Uploaded_variation`,NEAREST)
-vep_res2 = vep_res2 %>% distinct(`#Uploaded_variation`,.keep_all=T)
-
 
 # read in gh gwas
-dat = read_csv(files,col_types = "ddcccdddddcccc") %>%
+dat = read_csv(files,col_types = "ddccdddddccccc") %>%
   mutate(start = POSITION,end = POSITION,alleles = paste0(EA,"/",NEA),strand="+") %>%
   mutate(full_snp_id = paste0(CHROMOSOME,"_",POSITION,"_",EA,"/",NEA)) %>%
   left_join(vep_res %>% dplyr::rename("full_snp_id" = `#Uploaded_variation`),
   by="full_snp_id") %>%
   dplyr::select(1,2,full_snp_id,NEA,EA,EAF,N,BETA,SE,P,trait,sig_snp,gh_specific_locus,NEAREST) %>%
-  left_join(vep_res2 %>% dplyr::rename("full_snp_id" = `#Uploaded_variation`),
-  by="full_snp_id")
+  distinct(full_snp_id,NEAREST,.keep_all=T)
 
+# view gh-specific
 write_csv(dat,"/data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_mapped.csv")
-
-# read in gh gwas
-dat2 = read_csv(files,col_types = "ddcccdddddcccc") %>%
-  mutate(start = POSITION,end = POSITION,alleles = paste0(EA,"/",NEA),strand="+") %>%
-  mutate(full_snp_id = paste0(CHROMOSOME,"_",POSITION,"_",EA,"/",NEA)) %>%
-  left_join(vep_res3 %>% dplyr::rename("full_snp_id" = `#Uploaded_variation`),
-  by="full_snp_id") %>%
-  mutate(MARKERNAME = full_snp_id)
-
-write_csv(dat2,"/data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_mapped_full_anno.csv")
+write_csv(dat %>% filter(sig_snp == "lead_sig_snp"),"/data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_just_lead_snps_mapped.csv")
+write_csv(dat %>% filter(!is.na(gh_specific_locus)),"/data/home/hmy117/gh_quant_traits/outputs/all_gh_sig_hits_just_specific_snps_mapped.csv")
 
 # sum plots
 n_loci = dat %>% group_by(trait) %>%
@@ -372,7 +330,7 @@ dev.off()
 
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^sig_hits",full.names=T)
 files = files[!grepl("annotations",files)]
-dat = read_csv(files,col_types = "ddcccdddddcccc")
+dat = read_csv(files,col_types = "cddccddddddcccc")
 
 # read VEP results
 vep_res = read_table("/data/home/hmy117/gh_quant_traits/outputs/meta_nearest_gene.tsv",skip=32,col_types = cols(.default="c"))
@@ -380,8 +338,6 @@ vep_res = read_table("/data/home/hmy117/gh_quant_traits/outputs/meta_nearest_gen
 # take one gene per SNP
 vep_res = vep_res %>% distinct(`#Uploaded_variation`,NEAREST)
 
-
-# read in gh gwas
 dat = dat %>%
   mutate(start = Position,end = Position,alleles = paste0(EA,"/",NEA),strand="+") %>%
   mutate(full_snp_id = paste0(Chromosome,"_",Position,"_",EA,"/",NEA)) %>%
@@ -389,16 +345,22 @@ dat = dat %>%
   by="full_snp_id") %>%
   mutate(MarkerName = full_snp_id)
 
-write_tsv(dat,"/data/home/hmy117/gh_quant_traits/outputs/all_meta_anno.tsv",col_names=F)
+# filter to sig het SNPs
+
+write_csv(dat %>% filter(P.value_ancestry_het < 1.72e-9),"/data/home/hmy117/gh_quant_traits/outputs/all_meta_anno.csv")
+
 ```
 ## Run SuSiEx
 ```unix
+cd /data/home/hmy117/gh_quant_traits/
 qsub ./scripts/susie_prep.sh
-qsub ./scripts/susie.sh
+
+qsub /data/home/hmy117/gh_quant_traits/scripts/susie.sh
+
 ```
 
 ## Read in fine mapping results
-```r
+```R
 library(tidyverse)
 # get files
 files = list.files("/data/scratch/hmy117/gwas_raw_results/susie_res",full.names = T,pattern="summary")
@@ -429,45 +391,22 @@ ggplot(counts,aes(n,trait))+
 finemap_res %>%
   filter(CS_LENGTH==1)
 
-
-# SAS-specific
-sas_gh_specific = finemap_res %>%
-  filter(`POST-HOC_PROB_POP1` > 0.7 & `POST-HOC_PROB_POP5` > 0.7) %>%
-  filter_at(vars(
-             c(`POST-HOC_PROB_POP2`,
-               `POST-HOC_PROB_POP3`,
-               `POST-HOC_PROB_POP4`
-               )),
-             all_vars( . < 0.7 )
-
-             )
-
+# define specificity
+finemap_res = finemap_res %>%
+mutate(sas_specific = ifelse(`POST-HOC_PROB_POP1` > 0.8 & `POST-HOC_PROB_POP5` > 0.8 & `POST-HOC_PROB_POP2` < 0.8 & `POST-HOC_PROB_POP3` <0.8 & `POST-HOC_PROB_POP4`<0.8,"yes","no")) %>%
+mutate(eur_specific = ifelse(`POST-HOC_PROB_POP1` < 0.8 & `POST-HOC_PROB_POP5` < 0.8 & `POST-HOC_PROB_POP2` > 0.8 & `POST-HOC_PROB_POP3` <0.8 & `POST-HOC_PROB_POP4` <0.8,"yes","no"))  %>%
+mutate(afr_specific = ifelse(`POST-HOC_PROB_POP1` < 0.8 & `POST-HOC_PROB_POP5` < 0.8 & `POST-HOC_PROB_POP2` < 0.8 & `POST-HOC_PROB_POP3` >0.8 & `POST-HOC_PROB_POP4` <0.8,"yes","no")) %>%
+mutate(eas_specific = ifelse(
+  `POST-HOC_PROB_POP1` < 0.8 & `POST-HOC_PROB_POP5` < 0.8 & `POST-HOC_PROB_POP2` < 0.8 & `POST-HOC_PROB_POP3` <0.8 & `POST-HOC_PROB_POP4` >0.8,"yes","no"))
 # save to file
-write_csv(sas_gh_specific,"~/gh_quant_traits/outputs/sas_specific_finemap.csv")
-
-# filter further to those that replicate
-write_csv(finemap_res,"~/gh_quant_traits/outputs/all_finemap.csv")
-
-# locus plot
-
-locus = "16:88649138"
-snp_files = files = list.files("/data/scratch/hmy117/gwas_raw_results/susie_res",full.names = T,pattern=".snp")
-
-res = read_tsv("/data/scratch/hmy117/gwas_raw_results/susie_res/Vitamin_D_2.snp",col_types = cols(.default="c")) %>%
-dplyr::select(1,2,contains("PIP")) %>%
-pivot_longer(cols = contains("PIP")) %>%
-mutate(pos = as.numeric(BP),pip = as.numeric(value))
-
-
-ggplot(res,aes(pos,pip,col=name))+
-geom_point()+
-theme_bw()
+write_csv(finemap_res,"~/gh_quant_traits/outputs/ancestry_specific_finemap.csv")
 
 ```
 
 ## Locus plots
 ```unix
-qsub ./make_locus_plots.sh
+Rscript /data/home/hmy117/gh_quant_traits/scripts/make_locus_plots.R HbA1c
+view /data/home/hmy117/gh_quant_traits/scripts/make_locus_plots.sh
 ```
 
 ## Pleiotropy plot GH
@@ -475,7 +414,7 @@ qsub ./make_locus_plots.sh
 library(tidyverse)
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^gh_sig_hits",full.names=T)
 files = files[!grepl("annotations",files)]
-dat = read_csv(files,col_types = "ddcccdddddcccc")
+dat = read_csv(files,col_types = "ddccdddddccccc")
 
 # pleio plot
 
@@ -500,14 +439,14 @@ plot_dat$trait = factor(plot_dat$trait,levels = plot_dat$trait,ordered=T)
 
 
 
-  p=ggplot(plot_dat,aes(BETA,trait,size=-log10(P),color=trait))+
+  p=ggplot(plot_dat,aes(BETA,trait,size=-log10(P),fill=trait))+
     geom_vline(xintercept=0,linetype="dashed",alpha=0.5)+
     geom_errorbarh(mapping= aes(y=trait,xmin = BETA - 1.96*SE,xmax = BETA+1.96*SE),color="black",height=0.1,linewidth=0.1)+
-  geom_point()+
+  geom_point(color="black",shape=21,show.legend=F)+
   theme_bw()+
-  scale_color_brewer(palette="Paired")+
-  labs(size = "-log10(P)",color="Trait",
-       x = paste0("Effect size (beta)\n of ",snp,"-",ea1," on trait"))
+  scale_fill_brewer(palette="Paired")+
+  labs(size = "-log10(P)",
+       x = paste0("Effect size (beta)\n of ",snp,"-",ea1," on trait"),y="Trait")
   varname = str_replace_all(snp,":","_")
   png(paste0("/data/home/hmy117/gh_quant_traits/outputs/pleio_plots/GH_",varname,".png"),res=900,units="in",width=6,height=4)
   print(p)
@@ -613,3 +552,134 @@ plot_dat = plot_dat %>%
   print(p)
   dev.off()
 ```
+
+## Popcorn
+### Setup and calculate scores
+````unix
+# setup - run once
+module load python
+virtualenv ~/popcorn
+source ~/popcorn/bin/activate
+
+# pull repo
+cd ~
+git clone https://github.com/brielin/Popcorn
+cd ~/Popcorn
+pip install .
+
+# after setup run once, run this
+qsub ~/gh_quant_traits/scripts/popcorn_prep.sh
+
+````
+````R
+library(tidyverse)
+
+input_traits = read_csv("~/gh_quant_traits/inputs/gh_ukb_gwas_paths.csv")
+
+all_res = list()
+for(i in c(1:29)){
+  trait = input_traits$gh_phenotype[i]
+  all_res[[i]] = read_table(paste0("/data/scratch/hmy117/popcorn.sh.o3303433.",i),skip=236,n_max=3,col_types = "cdddd") %>%
+  mutate(phenotype = trait) %>%
+  filter(Val == "pgi") %>%
+  dplyr::rename(rg = `(obs)`)
+}
+
+all_res = do.call("bind_rows",all_res)
+
+# order and plot
+all_res = all_res %>%
+  arrange(desc(rg))
+all_res$phenotype = factor(all_res$phenotype,levels = all_res$phenotype,ordered=T)
+
+png("~/gh_quant_traits/outputs/popcorn_res.png",res=900,units="in",width=4,height=5)
+ggplot(all_res,aes(rg,phenotype))+
+geom_point(size=3,color="black")+
+geom_errorbarh(mapping = aes(y=phenotype,xmin = rg-SE, xmax = rg+SE),height=0.1)+
+theme_bw()+
+labs(x="Cross-ancestry genetic correlation",y="Trait")+
+geom_vline(xintercept = 1,linetype="dashed")+
+geom_vline(xintercept = 0,linetype="dashed")
+dev.off()
+
+write_csv(all_res,"~/gh_quant_traits/outputs/popcorn_res.csv")
+
+## Selection
+````R
+# FST
+
+library(tidyverse)
+library(ggrepel)
+setwd("/data/home/hmy117/gh_quant_traits/")
+
+trait = commandArgs(trailingOnly = TRUE)[1]
+
+# trait="HbA1c"
+# read in ukb data
+ukb_eur = read_tsv(paste0(
+  "/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/UKB_",trait,"_EUR.tsv")
+)
+
+# read in GH SAS
+gh_sas = read_tsv(paste0(
+  "/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/",trait,".tsv"
+), col_types = "ddccdddddccc")
+
+# combine UKB_EUR and GH
+combo_gwas = gh_sas %>%
+  mutate(CHROMOSOME = as.character(CHROMOSOME),ancestry="SAS") %>%
+  left_join(ukb_eur,by=c("MARKERNAME","EA","NEA","CHROMOSOME","POSITION")) %>%
+  dplyr::rename("EAF_SAS" = EAF.x,"EAF_EUR" = EAF.y)
+
+
+# function to calculate fst
+## sub-function to get number of hets from af
+num_hets = function(af){
+  2 * af * (1-af)
+}
+## main function
+fst = function(x,y){
+
+  het_1 = num_hets(x)
+  het_2 = num_hets(y)
+  het_combo = num_hets( (x + y)/2  )
+
+  hs = (het_1 + het_2) / 2
+  fst = ( het_combo - hs  ) / het_combo
+  fst
+}
+
+# calculate
+combo_gwas = combo_gwas %>%
+mutate(Fst = fst(EAF_EUR,EAF_SAS)) %>%
+filter(!is.na(Fst))
+
+## crude p value
+combo_gwas = combo_gwas %>%
+mutate(log10fst = log10(Fst+1e-100))
+combo_gwas = combo_gwas %>%
+mutate(
+  Fst_z = (log10fst - mean(log10fst,na.rm=T) ) / sd(log10fst,na.rm=T) )
+combo_gwas = combo_gwas %>% mutate(fst_p = pnorm(1 - Fst_z))
+
+plot_dat = combo_gwas %>%
+  dplyr::mutate("CHR"=as.numeric(CHROMOSOME),"BP"=POSITION,"SNP"=MARKERNAME) %>%
+  filter(!is.na(CHR))
+
+
+# standard plot
+qqman::manhattan(plot_dat,
+  p="fst_p",logp=T)
+
+plot_dat = plot_dat %>%
+  mutate(Fst_Z = (Fst - mean(Fst))/sd(Fst) )
+
+plot_dat = plot_dat %>% filter(EAF_SAS > 0.05 & EAF_EUR > 0.05 & EAF_SAS > EAF_EUR)
+
+mean(combo_gwas$Fst)
+qqman::manhattan(plot_dat,
+    p="Fst",logp=F,ylab = "Fst",annotatePval = 0.1)
+
+````
+## PICK UP HERE
+### Run per trait

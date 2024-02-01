@@ -12,7 +12,7 @@ trait=$(awk -F"," -v x=${SGE_TASK_ID} 'NR==x+1{print $2}' ~/gh_quant_traits/inpu
 
 ~/plink --bfile /data/scratch/hmy117/gwas_raw_results/kg_ref/g1000_sas_hg38_qc \
 --clump /data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/$trait\.tsv \
---clump-p1 5e-8 --clump-r2 0.01 \
+--clump-p1 1.72e-9 --clump-r2 0.001 \
 --out /data/scratch/hmy117/gwas_raw_results/clump_results/gh_sas_$trait \
 --clump-snp-field MARKERNAME \
 --clump-field P \

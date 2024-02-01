@@ -1,6 +1,6 @@
 #!/bin/bash
 #$ -pe smp 1
-#$ -l h_vmem=32G
+#$ -l h_vmem=16G
 #$ -l h_rt=1:0:0
 #$ -cwd
 #$ -o /data/scratch/hmy117
