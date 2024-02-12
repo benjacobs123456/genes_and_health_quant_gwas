@@ -1,12 +1,22 @@
 # Preamble
 This repo contains code used to produce the results of "Genetic architecture of routinely acquired blood tests in a UK cohort of South Asian ancestry reveals ancestry-specific causal variants"
 
+Link to preprint: [click here](https://www.researchsquare.com/article/rs-3438851/v1)
+
 Contact: b.jacobs@qmul.ac.uk
-20-12-23
+12-02-23
 
 # Code
+This repo contains the following steps/sections:
+1. Step 0: GWAS and analysis within the Genes & Health TRE
+2. [Step 1: munge GWAS summary statistics](#process-gwas-data)
+3. [Step 2: run & analyse MR-MEGA meta-analysis](#meta-analysis)
+4. [Step 3: fine-mapping](#fine-mapping)
+5. [Step 4: miscellaneous (pleiotropy, phewas, popcorn)](#misc)
 
-## Download GH GWAS data
+## Process GWAS data
+### Download GH GWAS data
+Code used to perform GWAS and run analysis in the Genes & Health TRE provided separately.
 ```unix
 cd /data/scratch/hmy117/gwas_raw_results/raw/
 ~/google-cloud-sdk/bin/gsutil cp gs://fg-qmul-production-sandbox-2_green/forBen-2023-12-20/* ./
@@ -15,7 +25,7 @@ cd /data/scratch/hmy117/gwas_raw_results/raw/
 tar -xvf /data/scratch/hmy117/gwas_raw_results/raw/exports_20_12_23.tar.gz
 ```
 
-## Download pan-UKB GWAS
+### Download pan-UKB GWAS
 ```unix
 cd /data/scratch/hmy117/gwas_raw_results/pan_ukb_gwas/
 wget https://pan-ukb-us-east-1.s3.amazonaws.com/sumstats_flat_files/biomarkers-30600-both_sexes-irnt.tsv.bgz &
@@ -59,7 +69,7 @@ for file in *.bgz;
   done
 ```
 
-## Liftover UKB GWAS
+### Liftover UKB GWAS
 ```unix
 
 # liftover ukb gwas
@@ -72,20 +82,19 @@ awk 'NR>1{print "chr"$1,$2-1,$2,$1":"$2}' /data/scratch/hmy117/gwas_raw_results/
 
 ```
 
-
-## Format UKB & GH files
+## Meta-analysis
+### Format UKB & GH files
 ```unix
 qsub ~/gh_quant_traits/scripts/prepare_gh_files.sh
 
 qsub ~/gh_quant_traits/scripts/prepare_ukb_files.sh
 ```
-
-## Run MR-MEGA
+### MR-MEGA
 ```unix
 qsub ~/gh_quant_traits/scripts/mr_mega.sh
 ```
 
-## Plot ancestral PCs
+### Plot ancestral PCs
 ```R
 library(tidyverse)
 setwd("/data/scratch/hmy117/gwas_raw_results/")
@@ -106,7 +115,7 @@ gridExtra::grid.arrange(a,b,ncol=2)
 dev.off()
 ```
 
-## Prepare 1kg files for clumping
+### Prepare 1kg files for clumping
 ```unix
 cd /data/scratch/hmy117/gwas_raw_results/kg_ref
 
@@ -178,24 +187,23 @@ for ancestry in eur sas eas amr afr;
 
 ```
 
-## Process MR-MEGA results
+### Process MR-MEGA results
 ```unix
 qsub ~/gh_quant_traits/scripts/process_mr_mega_res.sh
 ```
 
-## Clump results - return
+### Clump results
 ```unix
 qsub ~/gh_quant_traits/scripts/clump_results.sh
 qsub ~/gh_quant_traits/scripts/clump_gh_results.sh
 ```
 
-## Plots
+### Plots
 ```unix
 qsub ~/gh_quant_traits/scripts/make_manhattans.sh
 ```
 
-## PICK UP HERE
-## Combine results for summary tables
+### Combine results for summary tables
 ```unix
 library(tidyverse)
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^gh_sig_hits",full.names=T)
@@ -257,7 +265,7 @@ write_tsv(vep_input,"/data/home/hmy117/gh_quant_traits/outputs/all_meta_sig_hits
 
 ```
 
-## VEP
+### VEP
 ```unix
 module load ensembl-vep
 cd /data/home/hmy117/gh_quant_traits/outputs/
@@ -279,7 +287,7 @@ cd /data/home/hmy117/gh_quant_traits/outputs/
  --tab --fields "Uploaded_variation,Location,Allele,Gene,NEAREST,Feature,Feature_type,Consequence"
 ```
 
-## Combine results for summary tables (with VEP results)
+### Combine results for summary tables (with VEP results)
 ```r
 library(tidyverse)
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^gh_sig_hits",full.names=T)
@@ -350,7 +358,8 @@ dat = dat %>%
 write_csv(dat %>% filter(P.value_ancestry_het < 1.72e-9),"/data/home/hmy117/gh_quant_traits/outputs/all_meta_anno.csv")
 
 ```
-## Run SuSiEx
+## Fine-mapping
+### Run SuSiEx
 ```unix
 cd /data/home/hmy117/gh_quant_traits/
 qsub ./scripts/susie_prep.sh
@@ -359,7 +368,7 @@ qsub /data/home/hmy117/gh_quant_traits/scripts/susie.sh
 
 ```
 
-## Read in fine mapping results
+### Read in fine mapping results
 ```R
 library(tidyverse)
 # get files
@@ -403,13 +412,14 @@ write_csv(finemap_res,"~/gh_quant_traits/outputs/ancestry_specific_finemap.csv")
 
 ```
 
-## Locus plots
+## Misc
+### Locus plots
 ```unix
 Rscript /data/home/hmy117/gh_quant_traits/scripts/make_locus_plots.R HbA1c
 view /data/home/hmy117/gh_quant_traits/scripts/make_locus_plots.sh
 ```
 
-## Pleiotropy plot GH
+### Pleiotropy plot GH
 ```r
 library(tidyverse)
 files = list.files("/data/home/hmy117/gh_quant_traits/outputs/",pattern="^gh_sig_hits",full.names=T)
@@ -479,7 +489,7 @@ overall_res = do.call("bind_rows",overall_res)
 
 ```
 
-## Phewas
+### Phewas
 ```r
 library(tidyverse)
 library(ggrepel)
@@ -553,8 +563,8 @@ plot_dat = plot_dat %>%
   dev.off()
 ```
 
-## Popcorn
-### Setup and calculate scores
+### Popcorn
+#### Setup and calculate scores
 ````unix
 # setup - run once
 module load python
@@ -571,6 +581,7 @@ pip install .
 qsub ~/gh_quant_traits/scripts/popcorn_prep.sh
 
 ````
+#### Analyze
 ````R
 library(tidyverse)
 
@@ -604,82 +615,4 @@ dev.off()
 
 write_csv(all_res,"~/gh_quant_traits/outputs/popcorn_res.csv")
 
-## Selection
-````R
-# FST
-
-library(tidyverse)
-library(ggrepel)
-setwd("/data/home/hmy117/gh_quant_traits/")
-
-trait = commandArgs(trailingOnly = TRUE)[1]
-
-# trait="HbA1c"
-# read in ukb data
-ukb_eur = read_tsv(paste0(
-  "/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/UKB_",trait,"_EUR.tsv")
-)
-
-# read in GH SAS
-gh_sas = read_tsv(paste0(
-  "/data/scratch/hmy117/gwas_raw_results/mr_mega_inputs/",trait,".tsv"
-), col_types = "ddccdddddccc")
-
-# combine UKB_EUR and GH
-combo_gwas = gh_sas %>%
-  mutate(CHROMOSOME = as.character(CHROMOSOME),ancestry="SAS") %>%
-  left_join(ukb_eur,by=c("MARKERNAME","EA","NEA","CHROMOSOME","POSITION")) %>%
-  dplyr::rename("EAF_SAS" = EAF.x,"EAF_EUR" = EAF.y)
-
-
-# function to calculate fst
-## sub-function to get number of hets from af
-num_hets = function(af){
-  2 * af * (1-af)
-}
-## main function
-fst = function(x,y){
-
-  het_1 = num_hets(x)
-  het_2 = num_hets(y)
-  het_combo = num_hets( (x + y)/2  )
-
-  hs = (het_1 + het_2) / 2
-  fst = ( het_combo - hs  ) / het_combo
-  fst
-}
-
-# calculate
-combo_gwas = combo_gwas %>%
-mutate(Fst = fst(EAF_EUR,EAF_SAS)) %>%
-filter(!is.na(Fst))
-
-## crude p value
-combo_gwas = combo_gwas %>%
-mutate(log10fst = log10(Fst+1e-100))
-combo_gwas = combo_gwas %>%
-mutate(
-  Fst_z = (log10fst - mean(log10fst,na.rm=T) ) / sd(log10fst,na.rm=T) )
-combo_gwas = combo_gwas %>% mutate(fst_p = pnorm(1 - Fst_z))
-
-plot_dat = combo_gwas %>%
-  dplyr::mutate("CHR"=as.numeric(CHROMOSOME),"BP"=POSITION,"SNP"=MARKERNAME) %>%
-  filter(!is.na(CHR))
-
-
-# standard plot
-qqman::manhattan(plot_dat,
-  p="fst_p",logp=T)
-
-plot_dat = plot_dat %>%
-  mutate(Fst_Z = (Fst - mean(Fst))/sd(Fst) )
-
-plot_dat = plot_dat %>% filter(EAF_SAS > 0.05 & EAF_EUR > 0.05 & EAF_SAS > EAF_EUR)
-
-mean(combo_gwas$Fst)
-qqman::manhattan(plot_dat,
-    p="Fst",logp=F,ylab = "Fst",annotatePval = 0.1)
-
 ````
-## PICK UP HERE
-### Run per trait
